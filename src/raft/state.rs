@@ -1,5 +1,5 @@
-use crate::raft::log::LogEntry;
 use crate::kv::state::KvState;
+use crate::raft::log::LogEntry;
 
 #[derive(Debug, Clone)]
 pub struct RaftState {
@@ -28,7 +28,7 @@ impl RaftState {
 }
 
 impl RaftState {
-    pub fn apply_committed(&mut self,kv: &mut KvState){
+    pub fn apply_committed(&mut self, kv: &mut KvState) {
         while self.last_applied < self.commit_index {
             let net_index = self.last_applied + 1;
 
@@ -36,5 +36,55 @@ impl RaftState {
             kv.apply(entry.command.clone());
             self.last_applied = net_index;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kv::command::Command; // Command 在 kv::command
+
+    #[test]
+    fn test_apply_committed_entries() {
+        let mut raft = RaftState {
+            current_term: 1,
+            voted_for: None,
+            log: vec![
+                LogEntry {
+                    term: 1,
+                    index: 1,
+                    command: Command::Put {
+                        key: "a".into(),
+                        value: "1".into(),
+                    },
+                },
+                LogEntry {
+                    term: 1,
+                    index: 2,
+                    command: Command::Put {
+                        key: "b".into(),
+                        value: "2".into(),
+                    },
+                },
+                LogEntry {
+                    term: 1,
+                    index: 3,
+                    command: Command::Put {
+                        key: "c".into(),
+                        value: "3".into(),
+                    },
+                },
+            ],
+            commit_index: 2,
+            last_applied: 0,
+        };
+
+        let mut kv = KvState::new();
+        raft.apply_committed(&mut kv);
+
+        assert_eq!(kv.get("a").map(|s| s.as_str()), Some("1"));
+        assert_eq!(kv.get("b").map(|s| s.as_str()), Some("2"));
+        assert_eq!(kv.get("c"), None);
+        assert_eq!(raft.last_applied, 2);
     }
 }
