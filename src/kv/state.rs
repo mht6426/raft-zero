@@ -51,7 +51,7 @@ mod tests {
 
         // get
         let v = state.get("a");
-        assert_eq!(v, Some(&"1".to_string()));
+        assert_eq!(v.map(|s| s.as_str()), Some("1"));
 
         // delete
         state.apply(Command::Delete {

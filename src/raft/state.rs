@@ -1,3 +1,4 @@
+use crate::kv::command::Command;
 use crate::kv::state::KvState;
 use crate::raft::log::LogEntry;
 
@@ -37,12 +38,20 @@ impl RaftState {
             self.last_applied = net_index;
         }
     }
+    pub fn append_command(&mut self, command: Command) {
+        let index = self.log.len() as u64 + 1;
+        let entry = LogEntry {
+            term: self.current_term,
+            index,
+            command,
+        };
+        self.log.push(entry);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kv::command::Command; // Command 在 kv::command
 
     #[test]
     fn test_apply_committed_entries() {
@@ -87,4 +96,25 @@ mod tests {
         assert_eq!(kv.get("c"), None);
         assert_eq!(raft.last_applied, 2);
     }
+
+    #[test]
+    fn test_append_command() {
+        let mut raft = RaftState::new();
+        raft.current_term = 1;
+
+        raft.append_command(Command::Put {
+            key: "a".into(),
+            value: "1".into(),
+        });
+
+        raft.append_command(Command::Put {
+            key: "b".into(),
+            value: "2".into(),
+        });
+
+        assert_eq!(raft.log.len(), 2);
+        assert_eq!(raft.log[0].index, 1);
+        assert_eq!(raft.log[1].index, 2);
+    }
 }
+
