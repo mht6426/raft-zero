@@ -1,5 +1,6 @@
 use crate::kv::command::Command;
 use crate::kv::state::KvState;
+use crate::raft::append::AppendEntries;
 use crate::raft::log::LogEntry;
 
 #[derive(Debug, Clone)]
@@ -41,6 +42,7 @@ impl RaftState {
             self.last_applied = net_index;
         }
     }
+    
     pub fn append_command(&mut self, command: Command) {
         let index = self.log.len() as u64 + 1;
         let entry = LogEntry {
@@ -50,6 +52,7 @@ impl RaftState {
         };
         self.log.push(entry);
     }
+    
     pub fn commit_to(&mut self, index: u64) {
         let max_index = self.log.len() as u64;
         let new_commit = index.min(max_index);
@@ -75,6 +78,21 @@ impl RaftState {
         self.apply_committed(kv);
 
         Ok(())
+    }
+
+    pub fn handle_append_entries(&mut self, req: AppendEntries) {
+        self.log = req.entries;
+
+        let max_index = self.log.len() as u64;
+        self.commit_index = req.leader_commit.min(max_index);
+    }
+
+    pub fn replicate_to(&self, follower: &mut RaftState) {
+        let req = AppendEntries {
+            entries: self.log.clone(),
+            leader_commit: self.commit_index,
+        };
+        follower.handle_append_entries(req);
     }
 }
 
@@ -194,5 +212,36 @@ mod tests {
         assert_eq!(raft.log.len(), 1);
         assert_eq!(raft.commit_index, 1);
         assert_eq!(raft.last_applied, 1);
+    }
+
+    #[test]
+    fn test_log_replication_to_follower() {
+        let mut leader = RaftState::new();
+        leader.current_term = 1;
+        leader.is_leader = true;
+
+        let mut follower = RaftState::new();
+
+        let mut kv_leader = KvState::new();
+        let mut kv_follower = KvState::new();
+
+        // leader 处理命令
+        leader
+            .handle_command_as_leader(
+                Command::Put {
+                    name: "Anna".into(),
+                    money: "one dollar".into(),
+                },
+                &mut kv_leader,
+            )
+            .unwrap();
+
+        // leader 复制日志给 follower
+        leader.replicate_to(&mut follower);
+
+        // follower apply
+        follower.apply_committed(&mut kv_follower);
+
+        assert_eq!(kv_follower.get("Anna").map(|s| s.as_str()), Some("one dollar"));
     }
 }

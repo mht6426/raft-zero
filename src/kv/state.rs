@@ -37,7 +37,6 @@ impl KvState {
 
 mod tests {
     use super::*;
-    use crate::kv::command::Command;
 
     #[test]
     fn test_kv_put_get_delete() {
