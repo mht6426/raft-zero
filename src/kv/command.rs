@@ -1,7 +1,7 @@
 
 #[derive(Debug, Clone)]
 pub enum Command {
-    Put {key: String, value: String},
-    Get {key: String},
-    Delete {key: String},
+    Put {name: String, money: String},
+    Get {name: String},
+    Delete {name: String},
 }

@@ -14,6 +14,8 @@ pub struct RaftState {
     pub commit_index: u64,
     /// 已应用到状态机的最大 index
     pub last_applied: u64,
+    /// 是否是领导者(单节点，仅供学习过程中使用)
+    pub is_leader: bool,
 }
 
 impl RaftState {
@@ -24,6 +26,7 @@ impl RaftState {
             log: Vec::new(),
             commit_index: 0,
             last_applied: 0,
+            is_leader: false,
         }
     }
 }
@@ -47,6 +50,32 @@ impl RaftState {
         };
         self.log.push(entry);
     }
+    pub fn commit_to(&mut self, index: u64) {
+        let max_index = self.log.len() as u64;
+        let new_commit = index.min(max_index);
+        if new_commit > self.commit_index {
+            self.commit_index = new_commit;
+        }
+    }
+}
+
+impl RaftState {
+    pub fn handle_command_as_leader(
+        &mut self,
+        command: Command,
+        kv: &mut KvState,
+    ) -> Result<(), &'static str> {
+        if !self.is_leader {
+            return Err("Not the leader".into());
+        }
+
+        self.append_command(command);
+        let last_index = self.log.len() as u64;
+        self.commit_to(last_index);
+        self.apply_committed(kv);
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -63,37 +92,38 @@ mod tests {
                     term: 1,
                     index: 1,
                     command: Command::Put {
-                        key: "a".into(),
-                        value: "1".into(),
+                        name: "Anna".into(),
+                        money: "one dollar".into(),
                     },
                 },
                 LogEntry {
                     term: 1,
                     index: 2,
                     command: Command::Put {
-                        key: "b".into(),
-                        value: "2".into(),
+                        name: "Bob".into(),
+                        money: "two dollar".into(),
                     },
                 },
                 LogEntry {
                     term: 1,
                     index: 3,
                     command: Command::Put {
-                        key: "c".into(),
-                        value: "3".into(),
+                        name: "Carl".into(),
+                        money: "three dollar".into(),
                     },
                 },
             ],
             commit_index: 2,
             last_applied: 0,
+            is_leader: false,
         };
 
         let mut kv = KvState::new();
         raft.apply_committed(&mut kv);
 
-        assert_eq!(kv.get("a").map(|s| s.as_str()), Some("1"));
-        assert_eq!(kv.get("b").map(|s| s.as_str()), Some("2"));
-        assert_eq!(kv.get("c"), None);
+        assert_eq!(kv.get("Anna").map(|s| s.as_str()), Some("one dollar"));
+        assert_eq!(kv.get("Bob").map(|s| s.as_str()), Some("two dollar"));
+        assert_eq!(kv.get("Carl"), None);
         assert_eq!(raft.last_applied, 2);
     }
 
@@ -103,18 +133,66 @@ mod tests {
         raft.current_term = 1;
 
         raft.append_command(Command::Put {
-            key: "a".into(),
-            value: "1".into(),
+            name: "Anna".into(),
+            money: "one dollar".into(),
         });
 
         raft.append_command(Command::Put {
-            key: "b".into(),
-            value: "2".into(),
+            name: "Bob".into(),
+            money: "two dollar".into(),
         });
 
         assert_eq!(raft.log.len(), 2);
         assert_eq!(raft.log[0].index, 1);
         assert_eq!(raft.log[1].index, 2);
     }
-}
 
+    #[test]
+    fn test_append_commit_apply_flow() {
+        let mut raft = RaftState::new();
+        raft.current_term = 1;
+
+        let mut kv = KvState::new();
+
+        raft.append_command(Command::Put {
+            name: "Anna".into(),
+            money: "one dollar".into(),
+        });
+        raft.append_command(Command::Put {
+            name: "Bob".into(),
+            money: "two dollar".into(),
+        });
+
+        raft.apply_committed(&mut kv);
+        assert_eq!(kv.get("Anna"), None);
+        assert_eq!(kv.get("Bob"), None);
+
+        raft.commit_to(2);
+        raft.apply_committed(&mut kv);
+        assert_eq!(kv.get("Anna").map(|s| s.as_str()), Some("one dollar"));
+        assert_eq!(kv.get("Bob").map(|s| s.as_str()), Some("two dollar"));
+    }
+
+    #[test]
+    fn test_leader_handle_command() {
+        let mut raft = RaftState::new();
+        raft.current_term = 1;
+        raft.is_leader = true;
+
+        let mut kv = KvState::new();
+
+        raft.handle_command_as_leader(
+            Command::Put {
+                name: "Anna".into(),
+                money: "one dollar".into(),
+            },
+            &mut kv,
+        )
+        .unwrap();
+
+        assert_eq!(kv.get("Anna").map(|s| s.as_str()), Some("one dollar"));
+        assert_eq!(raft.log.len(), 1);
+        assert_eq!(raft.commit_index, 1);
+        assert_eq!(raft.last_applied, 1);
+    }
+}

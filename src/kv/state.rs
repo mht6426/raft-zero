@@ -12,22 +12,22 @@ impl KvState {
             data: HashMap::new(),
         }
     }
-    pub fn get(&self, key: &str) -> Option<&String> {
-        self.data.get(key)
+    pub fn get(&self, name: &str) -> Option<&String> {
+        self.data.get(name)
     }
 }
 
 impl KvState {
     pub fn apply(&mut self, cmd: Command) {
         match cmd {
-            Command::Put { key, value } => {
-                self.data.insert(key, value);
+            Command::Put { name, money } => {
+                self.data.insert(name, money);
             }
-            Command::Get { key: _ } => {
+            Command::Get { name: _ } => {
                 // Get command does not modify state
             }
-            Command::Delete { key } => {
-                self.data.remove(&key);
+            Command::Delete { name } => {
+                self.data.remove(&name);
             }
         }
     }
@@ -45,21 +45,21 @@ mod tests {
 
         // put
         state.apply(Command::Put {
-            key: "a".to_string(),
-            value: "1".to_string(),
+            name: "Anna".to_string(),
+            money: "one dollar".to_string(),
         });
 
         // get
-        let v = state.get("a");
-        assert_eq!(v.map(|s| s.as_str()), Some("1"));
+        let v = state.get("Anna");
+        assert_eq!(v.map(|s| s.as_str()), Some("one dollar"));
 
         // delete
         state.apply(Command::Delete {
-            key: "a".to_string(),
+            name: "Anna".to_string(),
         });
 
         // get again
-        let v = state.get("a");
+        let v = state.get("Anna");
         assert_eq!(v, None);
     }
 }
